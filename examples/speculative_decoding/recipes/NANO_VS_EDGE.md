@@ -17,7 +17,7 @@ Sources for Nano: `cosmos3-nano-reasoner` `config.json` (`Qwen3VLForConditionalG
 | Draft `dflash_architecture_config` from Edge `text_config` | **Done** (`hidden_size=2048`, heads 16/8, `head_dim=128`, 5 draft layers) |
 | 1-GPU train + `export_hf_checkpoint.py` | **Done** (2 steps, text-only JSONL, seq 4096). Export is `DFlashDraftModel`, mask `100`, vocab 131072, `target_layer_ids` `[1, 7, 13, 19, 25]`, `num_target_layers=28` |
 | vLLM load + generate (`method=dflash`) | **Smoke passed** on vLLM 0.27 + transformers 5.15 (engine loads and generates). Not a `MODEL_PATH` swap: see [vLLM](#vllm-dflash-on-edge) |
-| vLLM aux layer ids (needed for correct AL) | **Open** — serve-time mapping bug, not train/export. See [Aux layer mapping](#aux-layer-mapping-train-vs-vllm-serve) |
+| vLLM aux layer ids (needed for correct AL) | **Local patch** (no vLLM PR for now). Serve shim remaps Qwen `i+1` → `2*(i+1)` for Edge’s split layers. See [Aux layer mapping](#aux-layer-mapping-train-vs-vllm-serve) |
 | Rebuild PAI/VQA JSONL with the Edge tokenizer | **Not started.** Nano shards are not reusable |
 | 8-GPU production train (global batch 16) | **Not started** |
 | Sibling `train_dflash_cosmos3_edge.ipynb` | **Not started** |
@@ -168,13 +168,13 @@ The proposed formula is derived from the 2× block split; **confirm with a cosin
 
 #### What to fix (and what not to)
 
-- **Fix:** Edge-specific mapping in vLLM (`gpu_model_runner` branch for `cosmos3_edge`) or a serve shim that calls `set_aux_hidden_state_layers` with the remapped tuple. Do not multiply ids inside `config.json` and still rely on vLLM’s `+ 1` (that would double-convert).
-- **Do not fix:** Retrain or change `target_layer_ids` in export unless the training hook itself is wrong; the HF semantics are consistent.
-- **Nano:** No change; Qwen 1:1 layering matches vLLM’s `i + 1` rule.
+- **Fix (agreed):** local serve shim only. Do **not** open a vLLM PR yet. After vLLM applies Qwen `i+1`, multiply by 2 so aux ids are `2*(i+1)` (smoke export `[1,7,13,19,25]` → `(4, 16, 28, 40, 52)`). Do not rewrite `target_layer_ids` in export `config.json` (that would double-convert if vLLM’s `+ 1` still runs).
+- **Do not fix:** Retrain or change HF `target_layer_ids` unless the training hook itself is wrong.
+- **Nano:** Do not put this shim on Nano eval `PYTHONPATH`; Qwen 1:1 already matches `i+1`.
 
 ## Remaining (before an 8-GPU copy of the Nano job)
 
-1. Implement and verify the Edge aux remap in [Aux layer mapping](#aux-layer-mapping-train-vs-vllm-serve) (vLLM patch or serve shim + cosine check).
+1. Confirm the local aux remap on a real serve path (`Using auxiliary layers: (4, 16, 28, 40, 52)`), then cosine-check vs HF `hidden_states[lid+1]` and measure AL on a trained draft.
 2. Rebuild JSONL with the Edge tokenizer and Edge completions.
 3. 8-GPU train at global batch 16; do not mix with Nano `train_dflash.sh` (that script hard-codes Qwen heads, mask 151669, and `trust_remote_code=false`).
 4. Add `train_dflash_cosmos3_edge.ipynb` from this contract. Upstream PR to `NVIDIA/Model-Optimizer` after that recipe exists.
