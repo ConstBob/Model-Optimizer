@@ -18,7 +18,7 @@ Sources for Nano: `cosmos3-nano-reasoner` `config.json` (`Qwen3VLForConditionalG
 | 1-GPU train + `export_hf_checkpoint.py` | **Done** (2 steps, text-only JSONL, seq 4096). Export is `DFlashDraftModel`, mask `100`, vocab 131072, `target_layer_ids` `[1, 7, 13, 19, 25]`, `num_target_layers=28` |
 | vLLM load + generate (`method=dflash`) | **Smoke passed** on vLLM 0.27 + transformers 5.15 (engine loads and generates). Not a `MODEL_PATH` swap: see [vLLM](#vllm-dflash-on-edge) |
 | vLLM aux layer ids (needed for correct AL) | **Local patch** (no vLLM PR for now). Serve shim remaps Qwen `i+1` → `2*(i+1)` for Edge’s split layers. See [Aux layer mapping](#aux-layer-mapping-train-vs-vllm-serve) |
-| Rebuild PAI/VQA JSONL with the Edge tokenizer | **Not started.** Nano shards are not reusable |
+| Rebuild PAI/VQA JSONL with the Edge tokenizer | **In progress.** C-arm MM synthesis queued; matched 9952-row text slice added so the first train is not MM-only |
 | 8-GPU production train (global batch 16) | **Not started** |
 | Sibling `train_dflash_cosmos3_edge.ipynb` | **Not started** |
 
@@ -76,6 +76,13 @@ Nano production JSONL is tokenized / templated for Qwen3-VL. Edge still needs:
 1. Edge processor + chat template for PAI / VQA / text sources
 2. Completions from the **Edge** target, not Nano
 3. A fresh merge (`merge_dflash_datasets.py`); media paths can follow the same absolute-path convention (`data.vlm_img_dir=/`)
+
+The first Edge train is a **run-through mix**, not the Nano notebook’s Nemotron + 8-temperature multilingual pile and not Nano C-arm’s MM-only protocol. Use:
+
+- the same 9952 C-arm VQA+PAI prompts, with Edge assistants
+- a seeded 9952-row slice of `nvidia/Speculative-Decoding-Multilingual-Prompt-v2` user prompts, with Edge assistants
+
+That keeps text and media on the same order of magnitude so MTBench and video eval both see in-domain tokens. Expand the text pile after this job trains and evaluates.
 
 ## vLLM DFlash on Edge
 
