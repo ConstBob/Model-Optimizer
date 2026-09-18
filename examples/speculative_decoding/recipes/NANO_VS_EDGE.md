@@ -182,14 +182,17 @@ Cosmos3-Edge’s HF checkpoint has **28** fused text blocks (`text_config.num_hi
 | 19 | 20 | 40 |
 | 25 | 26 | 52 |
 
-Keep this remap in the local serve shim (`edge_compat`). Do **not** rewrite `target_layer_ids` in export `config.json` (that would double-convert if vLLM’s `+ 1` still runs). Do not put this shim on Nano eval `PYTHONPATH`. Confirm with a cosine check (HF `hidden_states[lid+1]` vs vLLM aux candidates) before treating AL as validated.
+Keep this remap in the local serve shim (`edge_compat`). Do **not** rewrite `target_layer_ids` in export `config.json` (that would double-convert if vLLM’s `+ 1` still runs). Do not put this shim on Nano eval `PYTHONPATH`.
+
+The remap is confirmed: same text `input_ids`, HF `hidden_states[lid+1]` vs vLLM `hidden_states + residual` after the MLP half of that HF block (capture id `2*(lid+1)`). Last-token cosine is ≥ 0.9997 on all five ids, and that vLLM layer is the argmax vs the other 55. Neighbors (attn of the same block, or the next attn) are lower. Script: `examples/speculative_decoding/scripts/check_edge_aux_cosine.py` (HF phase uses the train transformers overlay; vLLM phase uses `edge_compat` only, with the exported draft so `set_aux_hidden_state_layers` is the production path).
+
+## First bring-up (recipe)
+
+The Edge notebook path has been exercised: PAI + VQA 20k + multilingual shards 0–19 (eight temperatures; no curated `PLAIN_TEXT`), merge with notebook defaults, train at global batch 16 / `training_seq_len=16384` with Edge draft shapes and mask `100`, export, then MTBench + 8-video AL with `edge_compat`. The aux remap cosine-check against HF `hidden_states[lid+1]` passed. Cluster paths and scores live in the private ops checkout. Do not collapse MTBench and video into one number, and do not treat those AL figures as a Nano C-arm bake-off (different scale, tokenizer, and mix).
 
 ## Remaining (recipe)
 
-1. First bring-up **JSONL mix is built**: notebook PAI sample, notebook VQA 20k, multilingual shards 0–19, eight temperatures. Curated `PLAIN_TEXT` / Nemotron omitted until authorized. Merge is `merge_dflash_datasets.py` with notebook defaults (`word-overlap=0.90`, `cache-contexts=25000`, `jobs=8`). Cluster paths and job IDs stay in the private ops checkout.
-2. **Train in progress** at global batch 16 / `training_seq_len=16384` with Edge draft shapes and mask `100`, using the generated Edge notebook Step 3 CLI (not a Nano trainer config with Qwen heads, mask `151669`, or `trust_remote_code=false`). The notebook does not set `max_steps` or `learning_rate`; `dflash.yaml` supplies LR `6.0e-4`. The first run caps `max_steps` at 4000 (same cap as prior Nano 8-GPU Computelab runs).
-3. Export via `export_hf_checkpoint.py` (never serve a raw Trainer `checkpoint-*`).
-4. Cosine-check the aux remap, then MTBench / video AL with the Edge remap. Upstream PR to `NVIDIA/Model-Optimizer` after the recipe is validated.
+1. Upstream PR to `NVIDIA/Model-Optimizer`.
 
 ## Out of scope here
 
