@@ -186,10 +186,10 @@ Keep this remap in the local serve shim (`edge_compat`). Do **not** rewrite `tar
 
 ## Remaining (recipe)
 
-1. Cosine-check the aux remap and measure AL on a trained draft.
-2. Rebuild JSONL with Edge completions (same PAI/VQA notebook samples; multilingual may be a shard slice for a first run).
-3. Train at global batch 16 / `training_seq_len=16384` with Edge draft shapes and mask `100`. Do not reuse a Nano trainer config that hard-codes Qwen heads, mask `151669`, or `trust_remote_code=false`.
-4. MTBench / video AL with the Edge aux remap. Upstream PR to `NVIDIA/Model-Optimizer` after the recipe is validated.
+1. First bring-up **JSONL mix is built**: notebook PAI sample, notebook VQA 20k, multilingual shards 0–19, eight temperatures. Curated `PLAIN_TEXT` / Nemotron omitted until authorized. Merge is `merge_dflash_datasets.py` with notebook defaults (`word-overlap=0.90`, `cache-contexts=25000`, `jobs=8`). Cluster paths and job IDs stay in the private ops checkout.
+2. **Train in progress** at global batch 16 / `training_seq_len=16384` with Edge draft shapes and mask `100`, using the generated Edge notebook Step 3 CLI (not a Nano trainer config with Qwen heads, mask `151669`, or `trust_remote_code=false`). The notebook does not set `max_steps` or `learning_rate`; `dflash.yaml` supplies LR `6.0e-4`. The first run caps `max_steps` at 4000 (same cap as prior Nano 8-GPU Computelab runs).
+3. Export via `export_hf_checkpoint.py` (never serve a raw Trainer `checkpoint-*`).
+4. Cosine-check the aux remap, then MTBench / video AL with the Edge remap. Upstream PR to `NVIDIA/Model-Optimizer` after the recipe is validated.
 
 ## Out of scope here
 
